@@ -30,61 +30,60 @@
 
 #include "register_types.h"
 
-#include "core/object/script_language.h"
+#include "core/class_db.h"
+#include "core/io/resource_loader.h"
+#include "core/io/resource_saver.h"
+#include "core/script_language.h"
 #include "wasm_language.h"
 #include "wasm_script.h"
 
 #ifdef TOOLS_ENABLED
-#include "core/config/engine.h"
 #include "core/io/resource_importer.h"
 #include "editor/editor_node.h"
 #include "editor/resource_importer_wasm.h"
-
-static void _editor_init() {
-	Ref<ResourceImporterWasm> wasm_import;
-	wasm_import.instantiate();
-	ResourceFormatImporter::get_singleton()->add_importer(wasm_import);
-}
 #endif
 
 static WasmLanguage *wasm_language = nullptr;
 static Ref<ResourceFormatLoaderWasm> resource_loader_wasm;
 static Ref<ResourceFormatSaverWasm> resource_saver_wasm;
 
-void initialize_wasm_module(ModuleInitializationLevel p_level) {
-	if (p_level == MODULE_INITIALIZATION_LEVEL_SERVERS) {
-		GDREGISTER_CLASS(WasmScript);
+#ifdef TOOLS_ENABLED
+static void _editor_init() {
+	Ref<ResourceImporterWasm> wasm_import;
+	wasm_import.instance();
+	ResourceFormatImporter::get_singleton()->add_importer(wasm_import);
+}
+#endif
 
-		wasm_language = memnew(WasmLanguage);
-		ScriptServer::register_language(wasm_language);
+void register_wasm_types() {
+	ClassDB::register_class<WasmScript>();
 
-		resource_loader_wasm.instantiate();
-		ResourceLoader::add_resource_format_loader(resource_loader_wasm);
+	wasm_language = memnew(WasmLanguage);
+	ScriptServer::register_language(wasm_language);
 
-		resource_saver_wasm.instantiate();
-		ResourceSaver::add_resource_format_saver(resource_saver_wasm);
-	}
+	resource_loader_wasm.instance();
+	ResourceLoader::add_resource_format_loader(resource_loader_wasm);
+
+	resource_saver_wasm.instance();
+	ResourceSaver::add_resource_format_saver(resource_saver_wasm);
 
 #ifdef TOOLS_ENABLED
-	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
-		GDREGISTER_CLASS(ResourceImporterWasm);
-		EditorNode::add_init_callback(_editor_init);
-	}
+	ClassDB::register_class<ResourceImporterWasm>();
+	EditorNode::add_init_callback(_editor_init);
 #endif
 }
 
-void uninitialize_wasm_module(ModuleInitializationLevel p_level) {
-	if (p_level == MODULE_INITIALIZATION_LEVEL_SERVERS) {
-		if (wasm_language) {
-			ScriptServer::unregister_language(wasm_language);
-			memdelete(wasm_language);
-			wasm_language = nullptr;
-		}
-
-		ResourceLoader::remove_resource_format_loader(resource_loader_wasm);
-		resource_loader_wasm.unref();
-
-		ResourceSaver::remove_resource_format_saver(resource_saver_wasm);
-		resource_saver_wasm.unref();
+void unregister_wasm_types() {
+	if (wasm_language) {
+		ScriptServer::unregister_language(wasm_language);
+		memdelete(wasm_language);
+		wasm_language = nullptr;
 	}
+
+	ResourceLoader::remove_resource_format_loader(resource_loader_wasm);
+	resource_loader_wasm.unref();
+
+	ResourceSaver::remove_resource_format_saver(resource_saver_wasm);
+	resource_saver_wasm.unref();
 }
+

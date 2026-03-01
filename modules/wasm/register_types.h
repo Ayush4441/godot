@@ -28,9 +28,10 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#pragma once
+#ifndef WASM_REGISTER_TYPES_H
+#define WASM_REGISTER_TYPES_H
 
-#include "modules/register_module_types.h"
+void register_wasm_types();
+void unregister_wasm_types();
 
-void initialize_wasm_module(ModuleInitializationLevel p_level);
-void uninitialize_wasm_module(ModuleInitializationLevel p_level);
+#endif // WASM_REGISTER_TYPES_H

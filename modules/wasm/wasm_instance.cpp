@@ -81,7 +81,7 @@ bool WasmInstance::initialize(Object *p_owner, const Ref<WasmScript> &p_script) 
 			error_buf,
 			sizeof(error_buf));
 	if (!inst) {
-		ERR_PRINT(vformat("WasmInstance: failed to instantiate WASM module: %s", error_buf));
+		ERR_PRINT(String("WasmInstance: failed to instantiate WASM module: ") + error_buf);
 		return false;
 	}
 	wamr_instance = (void *)inst;
@@ -112,7 +112,7 @@ bool WasmInstance::_call_wasm_function(const char *p_name, uint32_t *p_argv, uin
 	}
 	if (!wasm_runtime_call_wasm((wasm_exec_env_t)wamr_exec_env, fn, p_argc, p_argv)) {
 		const char *err = wasm_runtime_get_exception((wasm_module_inst_t)wamr_instance);
-		ERR_PRINT(vformat("WasmInstance: exception in '%s': %s", p_name, err ? err : "(unknown)"));
+		ERR_PRINT(String("WasmInstance: exception in '") + p_name + "': " + (err ? err : "(unknown)"));
 		wasm_runtime_clear_exception((wasm_module_inst_t)wamr_instance);
 		return false;
 	}
@@ -130,8 +130,8 @@ bool WasmInstance::has_method(const StringName &p_method) const {
 	return script.is_valid() && script->has_method(p_method);
 }
 
-Variant WasmInstance::callp(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
-	r_error.error = Callable::CallError::CALL_OK;
+Variant WasmInstance::call(const StringName &p_method, const Variant **p_args, int p_argcount, Variant::CallError &r_error) {
+	r_error.error = Variant::CallError::CALL_OK;
 
 #ifdef WAMR_ENABLED
 	// Use the Object's stable 64-bit ID as the self handle.
@@ -139,7 +139,7 @@ Variant WasmInstance::callp(const StringName &p_method, const Variant **p_args, 
 	// NOTE: On 64-bit platforms this truncates the ID to 32 bits. For a production
 	// implementation, switch the WASM function signatures to use i64 and pass two
 	// i32 argv words, or maintain an index-based object table in WASM memory.
-	uint32_t self_handle = (uint32_t)(owner->get_instance_id() & 0xFFFFFFFF);
+	uint32_t self_handle = (uint32_t)((uint64_t)owner->get_instance_id() & 0xFFFFFFFF);
 
 	if (p_method == StringName("gd_ready")) {
 		uint32_t argv[1] = { self_handle };
@@ -149,7 +149,7 @@ Variant WasmInstance::callp(const StringName &p_method, const Variant **p_args, 
 
 	if (p_method == StringName("gd_process")) {
 		if (p_argcount < 1) {
-			r_error.error = Callable::CallError::CALL_ERROR_TOO_FEW_ARGUMENTS;
+			r_error.error = Variant::CallError::CALL_ERROR_TOO_FEW_ARGUMENTS;
 			r_error.expected = 1;
 			return Variant();
 		}
@@ -163,18 +163,19 @@ Variant WasmInstance::callp(const StringName &p_method, const Variant **p_args, 
 	}
 #endif
 
-	r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
+	r_error.error = Variant::CallError::CALL_ERROR_INVALID_METHOD;
 	return Variant();
 }
 
-void WasmInstance::notification(int p_notification, bool p_reversed) {
+void WasmInstance::notification(int p_notification) {
 	// Map engine notifications to WASM lifecycle exports.
 	if (p_notification == Node::NOTIFICATION_READY) {
-		Callable::CallError ce;
-		callp(StringName("gd_ready"), nullptr, 0, ce);
+		Variant::CallError ce;
+		call(StringName("gd_ready"), nullptr, 0, ce);
 	}
 }
 
 ScriptLanguage *WasmInstance::get_language() {
 	return WasmLanguage::get_singleton();
 }
+

@@ -29,6 +29,7 @@
 /**************************************************************************/
 
 #include "wasm_language.h"
+#include "wasm_script.h"
 
 #ifdef WAMR_ENABLED
 #include "wasm_export.h"
@@ -96,7 +97,7 @@ void WasmLanguage::finish() {
 #endif
 }
 
-Vector<String> WasmLanguage::get_reserved_words() const {
+void WasmLanguage::get_reserved_words(List<String> *p_words) const {
 	// WAT keywords
 	static const char *_reserved[] = {
 		"module", "func", "param", "result", "local", "global",
@@ -110,47 +111,37 @@ Vector<String> WasmLanguage::get_reserved_words() const {
 		"i32.const", "i64.const", "f32.const", "f64.const",
 		nullptr
 	};
-	Vector<String> words;
 	for (int i = 0; _reserved[i]; i++) {
-		words.push_back(_reserved[i]);
+		p_words->push_back(_reserved[i]);
 	}
-	return words;
 }
 
-Vector<String> WasmLanguage::get_comment_delimiters() const {
-	Vector<String> delimiters;
-	delimiters.push_back(";; "); // Line comment
-	delimiters.push_back("(; ;)"); // Block comment
-	return delimiters;
+void WasmLanguage::get_comment_delimiters(List<String> *p_delimiters) const {
+	p_delimiters->push_back(";; "); // Line comment
+	p_delimiters->push_back("(; ;)"); // Block comment
 }
 
-Vector<String> WasmLanguage::get_doc_comment_delimiters() const {
-	return Vector<String>();
+void WasmLanguage::get_string_delimiters(List<String> *p_delimiters) const {
+	p_delimiters->push_back("\" \"");
 }
 
-Vector<String> WasmLanguage::get_string_delimiters() const {
-	Vector<String> delimiters;
-	delimiters.push_back("\" \"");
-	return delimiters;
-}
-
-bool WasmLanguage::validate(const String &p_script, const String &p_path, List<String> *r_functions, List<ScriptError> *r_errors, List<Warning> *r_warnings, HashSet<int> *r_safe_lines) const {
+bool WasmLanguage::validate(const String &p_script, int &r_line_error, int &r_col_error, String &r_test_error, const String &p_path, List<String> *r_functions, List<Warning> *r_warnings, Set<int> *r_safe_lines) const {
 	// Basic validation: check that the text starts with a WASM module definition.
 	String stripped = p_script.strip_edges();
 	if (!stripped.begins_with("(module")) {
-		if (r_errors) {
-			ScriptError err;
-			err.path = p_path;
-			err.line = 1;
-			err.column = 1;
-			err.message = "WAT script must begin with '(module ...)'";
-			r_errors->push_back(err);
-		}
+		r_line_error = 1;
+		r_col_error = 1;
+		r_test_error = "WAT script must begin with '(module ...)'";
 		return false;
 	}
 	return true;
 }
 
+Script *WasmLanguage::create_script() const {
+	return memnew(WasmScript);
+}
+
 void WasmLanguage::get_recognized_extensions(List<String> *p_extensions) const {
 	p_extensions->push_back("wscript");
 }
+

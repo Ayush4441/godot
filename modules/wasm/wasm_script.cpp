@@ -30,7 +30,7 @@
 
 #include "wasm_script.h"
 
-#include "core/io/file_access.h"
+#include "core/os/file_access.h"
 #include "core/os/os.h"
 #include "wasm_instance.h"
 #include "wasm_language.h"
@@ -61,7 +61,7 @@ bool WasmScript::_load_wasm_binary() {
 	ERR_PRINT("WasmScript: WAMR runtime not available. Rebuild with WAMR enabled.");
 	return false;
 #else
-	if (wasm_bytes.is_empty()) {
+	if (wasm_bytes.size() == 0) {
 		ERR_PRINT("WasmScript: no WASM binary data loaded.");
 		valid = false;
 		return false;
@@ -74,7 +74,7 @@ bool WasmScript::_load_wasm_binary() {
 			error_buf,
 			sizeof(error_buf));
 	if (!mod) {
-		ERR_PRINT(vformat("WasmScript: failed to load WASM module: %s", error_buf));
+		ERR_PRINT(String("WasmScript: failed to load WASM module: ") + error_buf);
 		valid = false;
 		return false;
 	}
@@ -95,7 +95,7 @@ void WasmScript::_unload_wasm_binary() {
 	valid = false;
 }
 
-bool WasmScript::can_instantiate() const {
+bool WasmScript::can_instance() const {
 	return valid;
 }
 
@@ -113,8 +113,8 @@ ScriptInstance *WasmScript::instance_create(Object *p_this) {
 }
 
 bool WasmScript::instance_has(const Object *p_this) const {
-	for (WasmInstance *inst : instances) {
-		if (inst->get_owner() == p_this) {
+	for (const Set<WasmInstance *>::Element *E = instances.front(); E; E = E->next()) {
+		if (E->get()->get_owner() == p_this) {
 			return true;
 		}
 	}
@@ -125,11 +125,13 @@ Error WasmScript::reload(bool p_keep_state) {
 	_unload_wasm_binary();
 
 	// If a compiled WASM binary cache path is set, load from there.
-	if (!wasm_cache_path.is_empty()) {
+	if (!wasm_cache_path.empty()) {
 		Error err;
-		wasm_bytes = FileAccess::get_file_as_bytes(wasm_cache_path, &err);
-		if (err != OK || wasm_bytes.is_empty()) {
-			ERR_PRINT(vformat("WasmScript: could not read WASM binary at '%s'.", wasm_cache_path));
+		// FileAccess::get_file_as_array() was available in Godot 3.x to read
+		// a file's raw bytes into a Vector<uint8_t>.
+		wasm_bytes = FileAccess::get_file_as_array(wasm_cache_path, &err);
+		if (err != OK || wasm_bytes.size() == 0) {
+			ERR_PRINT("WasmScript: could not read WASM binary at '" + wasm_cache_path + "'.");
 			return ERR_FILE_NOT_FOUND;
 		}
 		if (!_load_wasm_binary()) {
@@ -156,7 +158,7 @@ void WasmScript::get_script_method_list(List<MethodInfo> *p_list) const {
 	MethodInfo process;
 	process.name = "gd_process";
 	process.arguments.push_back(PropertyInfo(Variant::INT, "self_handle"));
-	process.arguments.push_back(PropertyInfo(Variant::FLOAT, "delta"));
+	process.arguments.push_back(PropertyInfo(Variant::REAL, "delta"));
 	p_list->push_back(process);
 }
 
@@ -168,9 +170,9 @@ ScriptLanguage *WasmScript::get_language() const {
 // ResourceFormatLoaderWasm
 // ---------------------------------------------------------------------------
 
-Ref<Resource> ResourceFormatLoaderWasm::load(const String &p_path, const String &p_original_path, Error *r_error, bool p_use_sub_threads, float *r_progress, CacheMode p_cache_mode) {
+RES ResourceFormatLoaderWasm::load(const String &p_path, const String &p_original_path, Error *r_error, bool p_no_subresource_cache) {
 	Ref<WasmScript> script;
-	script.instantiate();
+	script.instance();
 
 	Error err;
 	String source = FileAccess::get_file_as_string(p_path, &err);
@@ -178,17 +180,12 @@ Ref<Resource> ResourceFormatLoaderWasm::load(const String &p_path, const String 
 		if (r_error) {
 			*r_error = err;
 		}
-		ERR_PRINT(vformat("WasmScript: failed to open script file '%s'.", p_path));
-		return Ref<Resource>();
+		ERR_PRINT("WasmScript: failed to open script file '" + p_path + "'.");
+		return RES();
 	}
 
 	script->set_source_code(source);
-
-	// The compiled WASM binary lives in the import cache alongside the .wscript.
-	// The importer saves it as <hash>.wasm; we look it up via the .import sidecar.
-	// At runtime the cache path is set before reload() is called by the loader.
-	// (ResourceImporterWasm embeds the cache path as metadata at import time.)
-	script->set_path(p_original_path.is_empty() ? p_path : p_original_path);
+	script->set_path(p_original_path.empty() ? p_path : p_original_path);
 
 	if (r_error) {
 		*r_error = OK;
@@ -215,24 +212,26 @@ String ResourceFormatLoaderWasm::get_resource_type(const String &p_path) const {
 // ResourceFormatSaverWasm
 // ---------------------------------------------------------------------------
 
-Error ResourceFormatSaverWasm::save(const Ref<Resource> &p_resource, const String &p_path, uint32_t p_flags) {
+Error ResourceFormatSaverWasm::save(const String &p_path, const RES &p_resource, uint32_t p_flags) {
 	Ref<WasmScript> script = p_resource;
 	ERR_FAIL_COND_V(script.is_null(), ERR_INVALID_PARAMETER);
 
-	Ref<FileAccess> fa = FileAccess::open(p_path, FileAccess::WRITE);
-	ERR_FAIL_COND_V_MSG(fa.is_null(), ERR_CANT_CREATE, vformat("WasmScript: cannot write to '%s'.", p_path));
+	FileAccess *fa = FileAccess::open(p_path, FileAccess::WRITE);
+	ERR_FAIL_COND_V_MSG(!fa, ERR_CANT_CREATE, "WasmScript: cannot write to '" + p_path + "'.");
 
 	String src = script->get_source_code();
 	fa->store_string(src);
+	memdelete(fa);
 	return OK;
 }
 
-bool ResourceFormatSaverWasm::recognize(const Ref<Resource> &p_resource) const {
+bool ResourceFormatSaverWasm::recognize(const RES &p_resource) const {
 	return p_resource->get_class_name() == StringName("WasmScript");
 }
 
-void ResourceFormatSaverWasm::get_recognized_extensions(const Ref<Resource> &p_resource, List<String> *p_extensions) const {
+void ResourceFormatSaverWasm::get_recognized_extensions(const RES &p_resource, List<String> *p_extensions) const {
 	if (recognize(p_resource)) {
 		p_extensions->push_back("wscript");
 	}
 }
+

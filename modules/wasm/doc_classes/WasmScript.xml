@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="WasmScript" inherits="Script" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+<class name="WasmScript" inherits="Script" version="3.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
 	<brief_description>
 		A Script resource backed by a WebAssembly (WASM) module.
 	</brief_description>
@@ -20,9 +20,13 @@
 	</description>
 	<tutorials>
 	</tutorials>
+	<methods>
+	</methods>
 	<members>
 		<member name="wasm_cache_path" type="String" setter="set_wasm_cache_path" getter="get_wasm_cache_path" default="&quot;&quot;">
-			Path to the compiled [code].wasm[/code] binary in the import cache ([code].godot/imported/[/code]). Set automatically by [ResourceImporterWasm] at import time.
+			Path to the compiled [code].wasm[/code] binary in the import cache ([code].import/[/code]). Set automatically by [ResourceImporterWasm] at import time.
 		</member>
 	</members>
+	<constants>
+	</constants>
 </class>

@@ -28,9 +28,11 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#pragma once
+#ifndef WASM_INSTANCE_H
+#define WASM_INSTANCE_H
 
-#include "core/object/script_instance.h"
+#include "core/io/multiplayer_api.h"
+#include "core/script_language.h"
 #include "wasm_script.h"
 
 // Per-Object WASM instance.
@@ -59,20 +61,23 @@ public:
 		}
 		return Variant::NIL;
 	}
-	virtual void validate_property(PropertyInfo &p_property) const override {}
-	virtual bool property_can_revert(const StringName &p_name) const override { return false; }
-	virtual bool property_get_revert(const StringName &p_name, Variant &r_ret) const override { return false; }
 
 	virtual Object *get_owner() override { return owner; }
 	virtual void get_method_list(List<MethodInfo> *p_list) const override;
 	virtual bool has_method(const StringName &p_method) const override;
-	virtual Variant callp(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) override;
-	virtual void notification(int p_notification, bool p_reversed = false) override;
+	virtual Variant call(const StringName &p_method, const Variant **p_args, int p_argcount, Variant::CallError &r_error) override;
+	virtual void notification(int p_notification) override;
 	virtual Ref<Script> get_script() const override { return script; }
 	virtual ScriptLanguage *get_language() override;
+
+	// Godot 3.x requires these RPC mode virtuals on ScriptInstance
+	virtual MultiplayerAPI::RPCMode get_rpc_mode(const StringName &p_method) const override { return MultiplayerAPI::RPC_MODE_DISABLED; }
+	virtual MultiplayerAPI::RPCMode get_rset_mode(const StringName &p_variable) const override { return MultiplayerAPI::RPC_MODE_DISABLED; }
 
 	bool initialize(Object *p_owner, const Ref<WasmScript> &p_script);
 
 	WasmInstance();
 	~WasmInstance();
 };
+
+#endif // WASM_INSTANCE_H
