@@ -1,0 +1,25 @@
+#!/usr/bin/env python
+from misc.utility.scons_hints import *
+
+Import("env")
+Import("env_modules")
+
+env_wasm = env_modules.Clone()
+
+# Check for WAMR in thirdparty directory.
+import os
+
+wamr_include_path = os.path.join(Dir("#").abspath, "thirdparty", "wamr", "core", "iwasm", "include")
+wamr_available = os.path.isdir(wamr_include_path)
+
+if wamr_available:
+    env_wasm.Append(CPPDEFINES=["WAMR_ENABLED"])
+    env_wasm.Prepend(CPPPATH=[wamr_include_path])
+
+module_obj = []
+env_wasm.add_source_files(module_obj, "*.cpp")
+
+if env.editor_build:
+    env_wasm.add_source_files(module_obj, "editor/*.cpp")
+
+env.modules_sources += module_obj
