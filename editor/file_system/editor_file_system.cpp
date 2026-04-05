@@ -34,7 +34,10 @@
 #include "core/extension/gdextension_manager.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
+#include "core/io/resource_importer.h"
+#include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
+#include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 #include "core/object/worker_thread_pool.h"
 #include "core/os/os.h"
@@ -46,7 +49,9 @@
 #include "editor/script/script_editor_plugin.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/settings/project_settings_editor.h"
+#include "scene/main/scene_tree.h"
 #include "scene/resources/packed_scene.h"
+#include "servers/display/display_server.h"
 
 EditorFileSystem *EditorFileSystem::singleton = nullptr;
 int EditorFileSystem::nb_files_total = 0;
@@ -3137,7 +3142,7 @@ Error EditorFileSystem::_copy_file(const String &p_from, const String &p_to) {
 		Error err = OK;
 		Ref<Resource> res = ResourceCache::get_ref(p_from);
 		if (res.is_null()) {
-			res = ResourceLoader::load(p_from, "", ResourceFormatLoader::CACHE_MODE_REUSE, &err);
+			res = ResourceLoader::load(p_from, "", ResourceLoaderConstants::CACHE_MODE_REUSE, &err);
 		} else {
 			bool edited = false;
 			List<Ref<Resource>> cached;
@@ -3242,9 +3247,9 @@ void EditorFileSystem::reimport_files(const Vector<String> &p_files) {
 	// this could lead to a slow import process, especially when the editor is unfocused.
 	// Temporarily disabling VSync and low_processor_usage_mode while reimporting fixes this.
 	const bool old_low_processor_usage_mode = OS::get_singleton()->is_in_low_processor_usage_mode();
-	const DisplayServer::VSyncMode old_vsync_mode = DisplayServer::get_singleton()->window_get_vsync_mode(DisplayServer::MAIN_WINDOW_ID);
+	const DisplayServerEnums::VSyncMode old_vsync_mode = DisplayServer::get_singleton()->window_get_vsync_mode(DisplayServerEnums::MAIN_WINDOW_ID);
 	OS::get_singleton()->set_low_processor_usage_mode(false);
-	DisplayServer::get_singleton()->window_set_vsync_mode(DisplayServer::VSyncMode::VSYNC_DISABLED);
+	DisplayServer::get_singleton()->window_set_vsync_mode(DisplayServerEnums::VSyncMode::VSYNC_DISABLED);
 
 	Vector<ImportFile> reimport_files;
 
@@ -3438,7 +3443,7 @@ Error EditorFileSystem::_resource_import(const String &p_path) {
 	return OK;
 }
 
-Ref<Resource> EditorFileSystem::_load_resource_on_startup(ResourceFormatImporter *p_importer, const String &p_path, Error *r_error, bool p_use_sub_threads, float *r_progress, ResourceFormatLoader::CacheMode p_cache_mode) {
+Ref<Resource> EditorFileSystem::_load_resource_on_startup(ResourceFormatImporter *p_importer, const String &p_path, Error *r_error, bool p_use_sub_threads, float *r_progress, ResourceLoaderConstants::CacheMode p_cache_mode) {
 	ERR_FAIL_NULL_V(p_importer, Ref<Resource>());
 
 	if (!FileAccess::exists(p_path)) {

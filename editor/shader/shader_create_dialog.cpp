@@ -32,12 +32,17 @@
 
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
+#include "core/io/resource_loader.h"
+#include "core/io/resource_saver.h"
+#include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 #include "editor/editor_node.h"
 #include "editor/gui/editor_file_dialog.h"
 #include "editor/gui/editor_validation_panel.h"
+#include "editor/settings/editor_settings.h"
 #include "editor/shader/editor_shader_language_plugin.h"
 #include "editor/themes/editor_scale.h"
+#include "scene/main/scene_tree.h"
 #include "scene/resources/shader_include.h"
 #include "servers/rendering/shader_types.h"
 

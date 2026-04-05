@@ -50,19 +50,21 @@
 
 #include "rendering_device_driver_metal.h"
 
-#include "pixel_formats.h"
-#include "rendering_context_driver_metal.h"
-#include "rendering_shader_container_metal.h"
-
+#include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/io/marshalls.h"
+#include "core/os/os.h"
 #include "core/string/ustring.h"
 #include "core/templates/hash_map.h"
 #include "drivers/apple/foundation_helpers.h"
+#include "drivers/metal/pixel_formats.h"
+#include "drivers/metal/rendering_context_driver_metal.h"
+#include "drivers/metal/rendering_shader_container_metal.h"
 
+#include <Metal/Metal.hpp>
 #include <os/log.h>
 #include <os/signpost.h>
-#include <Metal/Metal.hpp>
+
 #include <algorithm>
 
 #ifndef MTLGPUAddress
@@ -881,6 +883,11 @@ void RenderingDeviceDriverMetal::command_buffer_execute_secondary(CommandBufferI
 
 void RenderingDeviceDriverMetal::_swap_chain_release(SwapChain *p_swap_chain) {
 	_swap_chain_release_buffers(p_swap_chain);
+
+	if (p_swap_chain->render_pass.id != 0) {
+		render_pass_free(p_swap_chain->render_pass);
+		p_swap_chain->render_pass = RenderPassID();
+	}
 }
 
 void RenderingDeviceDriverMetal::_swap_chain_release_buffers(SwapChain *p_swap_chain) {
@@ -894,9 +901,15 @@ RDD::SwapChainID RenderingDeviceDriverMetal::swap_chain_create(RenderingContextD
 		GODOT_CLANG_WARNING_POP
 	}
 
+	SwapChain *swap_chain = memnew(SwapChain);
+	swap_chain->surface = p_surface;
+	return SwapChainID(swap_chain);
+}
+
+RDD::RenderPassID RenderingDeviceDriverMetal::_swap_chain_create_render_pass(RDD::DataFormat p_format) {
 	// Create the render pass that will be used to draw to the swap chain's framebuffers.
 	RDD::Attachment attachment;
-	attachment.format = pixel_formats->getDataFormat(surface->get_pixel_format());
+	attachment.format = p_format;
 	attachment.samples = RDD::TEXTURE_SAMPLES_1;
 	attachment.load_op = RDD::ATTACHMENT_LOAD_OP_CLEAR;
 	attachment.store_op = RDD::ATTACHMENT_STORE_OP_STORE;
@@ -907,15 +920,7 @@ RDD::SwapChainID RenderingDeviceDriverMetal::swap_chain_create(RenderingContextD
 	color_ref.aspect.set_flag(RDD::TEXTURE_ASPECT_COLOR_BIT);
 	subpass.color_references.push_back(color_ref);
 
-	RenderPassID render_pass = render_pass_create(attachment, subpass, {}, 1, RDD::AttachmentReference());
-	ERR_FAIL_COND_V(!render_pass, SwapChainID());
-
-	// Create the empty swap chain until it is resized.
-	SwapChain *swap_chain = memnew(SwapChain);
-	swap_chain->surface = p_surface;
-	swap_chain->data_format = attachment.format;
-	swap_chain->render_pass = render_pass;
-	return SwapChainID(swap_chain);
+	return render_pass_create(attachment, subpass, {}, 1, RDD::AttachmentReference());
 }
 
 Error RenderingDeviceDriverMetal::swap_chain_resize(CommandQueueID p_cmd_queue, SwapChainID p_swap_chain, uint32_t p_desired_framebuffer_count) {
@@ -924,7 +929,24 @@ Error RenderingDeviceDriverMetal::swap_chain_resize(CommandQueueID p_cmd_queue, 
 
 	SwapChain *swap_chain = (SwapChain *)(p_swap_chain.id);
 	RenderingContextDriverMetal::Surface *surface = (RenderingContextDriverMetal::Surface *)(swap_chain->surface);
-	surface->resize(p_desired_framebuffer_count);
+
+	DataFormat new_data_format = DATA_FORMAT_MAX;
+	ColorSpace new_color_space = COLOR_SPACE_MAX;
+	Error err = surface->resize(p_desired_framebuffer_count, new_data_format, new_color_space);
+	if (err != OK) {
+		return err;
+	}
+
+	if (new_data_format != swap_chain->data_format) {
+		_swap_chain_release(swap_chain);
+		swap_chain->render_pass = _swap_chain_create_render_pass(new_data_format);
+		if (!swap_chain->render_pass) {
+			return ERR_INVALID_DATA;
+		}
+	}
+
+	swap_chain->data_format = new_data_format;
+	swap_chain->color_space = new_color_space;
 
 	// Once everything's been created correctly, indicate the surface no longer needs to be resized.
 	context_driver->surface_set_needs_resize(swap_chain->surface, false);
@@ -957,7 +979,8 @@ RDD::DataFormat RenderingDeviceDriverMetal::swap_chain_get_format(SwapChainID p_
 }
 
 RDD::ColorSpace RenderingDeviceDriverMetal::swap_chain_get_color_space(SwapChainID p_swap_chain) {
-	return RDD::COLOR_SPACE_REC709_NONLINEAR_SRGB;
+	const SwapChain *swap_chain = (const SwapChain *)(p_swap_chain.id);
+	return swap_chain->color_space;
 }
 
 void RenderingDeviceDriverMetal::swap_chain_set_max_fps(SwapChainID p_swap_chain, int p_max_fps) {
@@ -975,7 +998,6 @@ void RenderingDeviceDriverMetal::swap_chain_free(SwapChainID p_swap_chain) {
 		GODOT_CLANG_WARNING_POP
 	}
 	_swap_chain_release(swap_chain);
-	render_pass_free(swap_chain->render_pass);
 	memdelete(swap_chain);
 }
 
@@ -1581,14 +1603,14 @@ RDD::RenderPassID RenderingDeviceDriverMetal::render_pass_create(VectorView<Atta
 	}
 
 	static const MTL::LoadAction LOAD_ACTIONS[] = {
-		[ATTACHMENT_LOAD_OP_LOAD] = MTL::LoadActionLoad,
-		[ATTACHMENT_LOAD_OP_CLEAR] = MTL::LoadActionClear,
-		[ATTACHMENT_LOAD_OP_DONT_CARE] = MTL::LoadActionDontCare,
+		MTL::LoadActionLoad, // ATTACHMENT_LOAD_OP_LOAD
+		MTL::LoadActionClear, // ATTACHMENT_LOAD_OP_CLEAR
+		MTL::LoadActionDontCare, // ATTACHMENT_LOAD_OP_DONT_CARE
 	};
 
 	static const MTL::StoreAction STORE_ACTIONS[] = {
-		[ATTACHMENT_STORE_OP_STORE] = MTL::StoreActionStore,
-		[ATTACHMENT_STORE_OP_DONT_CARE] = MTL::StoreActionDontCare,
+		MTL::StoreActionStore, // ATTACHMENT_STORE_OP_STORE
+		MTL::StoreActionDontCare, // ATTACHMENT_STORE_OP_DONT_CARE
 	};
 
 	Vector<MDAttachment> attachments;
@@ -2240,7 +2262,7 @@ RDD::PipelineID RenderingDeviceDriverMetal::compute_pipeline_create(ShaderID p_s
 
 // ----- ACCELERATION STRUCTURE -----
 
-RDD::AccelerationStructureID RenderingDeviceDriverMetal::blas_create(BufferID p_vertex_buffer, uint64_t p_vertex_offset, VertexFormatID p_vertex_format, uint32_t p_vertex_count, uint32_t p_position_attribute_location, BufferID p_index_buffer, IndexBufferFormat p_index_format, uint64_t p_index_offset_bytes, uint32_t p_index_coun, BitField<AccelerationStructureGeometryBits> p_geometry_bits) {
+RDD::AccelerationStructureID RenderingDeviceDriverMetal::blas_create(VectorView<AccelerationStructureGeometry> p_geometries) {
 	ERR_FAIL_V_MSG(AccelerationStructureID(), "Ray tracing is not currently supported by the Metal driver.");
 }
 
@@ -2645,6 +2667,8 @@ bool RenderingDeviceDriverMetal::has_feature(Features p_feature) {
 			return device_properties->features.metal_fx_spatial;
 		case SUPPORTS_METALFX_TEMPORAL:
 			return device_properties->features.metal_fx_temporal;
+		case SUPPORTS_HDR_OUTPUT:
+			return true;
 		case SUPPORTS_IMAGE_ATOMIC_32_BIT:
 			return device_properties->features.supports_native_image_atomics;
 		case SUPPORTS_VULKAN_MEMORY_MODEL:
@@ -2824,6 +2848,7 @@ Error RenderingDeviceDriverMetal::_initialize(uint32_t p_device_index, uint32_t 
 	ERR_FAIL_COND_V(err, ERR_CANT_CREATE);
 
 	device_properties = memnew(MetalDeviceProperties(device));
+	pixel_formats = memnew(PixelFormats(device, device_properties->features));
 	device_profile = device_profile_from_properties(device_properties);
 	resource_cache = std::make_unique<MDResourceCache>(device, *pixel_formats, device_properties->limits.maxPerStageBufferCount);
 	shader_container_format = memnew(RenderingShaderContainerFormatMetal(&device_profile));
@@ -2838,7 +2863,6 @@ Error RenderingDeviceDriverMetal::_initialize(uint32_t p_device_index, uint32_t 
 	// Set the pipeline cache ID based on the Metal version.
 	pipeline_cache_id = "metal-driver-" + get_api_version();
 
-	pixel_formats = memnew(PixelFormats(device, device_properties->features));
 	if (device_properties->features.layeredRendering) {
 		multiview_capabilities.is_supported = true;
 		multiview_capabilities.max_view_count = device_properties->limits.maxViewports;

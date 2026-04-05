@@ -33,10 +33,11 @@
 #include "core/config/project_settings.h"
 #include "core/io/image.h"
 #include "servers/rendering/renderer_rd/environment/fog.h"
-#include "servers/rendering/renderer_rd/renderer_compositor_rd.h"
+#include "servers/rendering/renderer_rd/framebuffer_cache_rd.h"
 #include "servers/rendering/renderer_rd/shaders/decal_data_inc.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/light_data_inc.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/scene_data_inc.glsl.gen.h"
+#include "servers/rendering/renderer_rd/storage_rd/particles_storage.h"
 #include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
 #include "servers/rendering/rendering_server_default.h"
 #include "servers/rendering/rendering_server_enums.h"
@@ -767,7 +768,7 @@ void RendererSceneRenderRD::_render_buffers_post_process_and_tonemap(const Rende
 
 		RID dest_fb;
 		RD::DataFormat dest_fb_format;
-		if (spatial_upscaler != nullptr || use_smaa) {
+		if (spatial_upscaler || use_smaa) {
 			// If we use a spatial upscaler to upscale or SMAA to antialias we need to write our result into an intermediate buffer.
 			// Note that this is cached so we only create the texture the first time.
 			dest_fb_format = rb->get_base_data_format();
@@ -775,7 +776,7 @@ void RendererSceneRenderRD::_render_buffers_post_process_and_tonemap(const Rende
 			dest_fb = FramebufferCacheRD::get_singleton()->get_cache(dest_texture);
 			tonemap.dest_texture_size = rb->get_internal_size();
 		} else {
-			// If we do a bilinear upscale we just render into our render target and our shader will upscale automatically.
+			// If we do a nearest or bilinear upscale, we just render into our render target and our shader will upscale automatically.
 			// Target size in this case is lying as we never get our real target size communicated.
 			// Bit nasty but...
 
@@ -786,6 +787,8 @@ void RendererSceneRenderRD::_render_buffers_post_process_and_tonemap(const Rende
 				dest_fb = texture_storage->render_target_get_rd_framebuffer(render_target);
 			}
 			tonemap.dest_texture_size = texture_storage->render_target_get_size(render_target);
+
+			tonemap.bilinear_filtering = scale_mode != RSE::VIEWPORT_SCALING_3D_MODE_NEAREST;
 		}
 
 		tonemap.debanding_mode = RendererRD::ToneMapper::TonemapSettings::DebandingMode::DEBANDING_MODE_DISABLED;
@@ -1353,7 +1356,6 @@ void RendererSceneRenderRD::render_scene(const Ref<RenderSceneBuffers> &p_render
 		scene_data.cam_transform = p_camera_data->main_transform;
 		scene_data.cam_projection = p_camera_data->main_projection;
 		scene_data.cam_orthogonal = p_camera_data->is_orthogonal;
-		scene_data.cam_frustum = p_camera_data->is_frustum;
 		scene_data.camera_visible_layers = p_camera_data->visible_layers;
 		scene_data.taa_jitter = p_camera_data->taa_jitter;
 		scene_data.taa_frame_count = p_camera_data->taa_frame_count;

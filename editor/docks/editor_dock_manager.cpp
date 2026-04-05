@@ -30,14 +30,8 @@
 
 #include "editor_dock_manager.h"
 
-#include "core/object/class_db.h"
-#include "scene/gui/box_container.h"
-#include "scene/gui/button.h"
-#include "scene/gui/label.h"
-#include "scene/gui/split_container.h"
-#include "scene/gui/tab_container.h"
-#include "scene/main/window.h"
-
+#include "core/object/callable_mp.h"
+#include "core/object/class_db.h" // IWYU pragma: keep. `ADD_SIGNAL` macro.
 #include "editor/docks/dock_tab_container.h"
 #include "editor/docks/editor_dock.h"
 #include "editor/editor_node.h"
@@ -45,9 +39,28 @@
 #include "editor/gui/window_wrapper.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
+#include "scene/gui/box_container.h"
+#include "scene/gui/button.h"
+#include "scene/gui/label.h"
+#include "scene/gui/popup_menu.h"
+#include "scene/gui/split_container.h"
+#include "scene/gui/tab_container.h"
+#include "scene/main/window.h"
+#include "servers/display/display_server.h"
 
 ////////////////////////////////////////////////
 ////////////////////////////////////////////////
+
+void DockSplitContainer::_notification(int p_what) {
+	switch (p_what) {
+		case EditorSettings::NOTIFICATION_EDITOR_SETTINGS_CHANGED: {
+			if (!EditorSettings::get_singleton()->check_changed_settings_in_group("interface/touchscreen")) {
+				return;
+			}
+			set_touch_dragger_enabled(EDITOR_GET("interface/touchscreen/enable_touch_optimizations"));
+		} break;
+	}
+}
 
 void DockSplitContainer::_update_visibility() {
 	if (is_updating) {
@@ -115,6 +128,7 @@ DockSplitContainer::DockSplitContainer() {
 	if (EDITOR_GET("interface/touchscreen/enable_touch_optimizations")) {
 		callable_mp((SplitContainer *)this, &SplitContainer::set_touch_dragger_enabled).call_deferred(true);
 	}
+	set_drag_nested_intersections(true);
 }
 
 ////////////////////////////////////////////////
@@ -328,7 +342,7 @@ void EditorDockManager::_move_dock(EditorDock *p_dock, Control *p_target, int p_
 				p_dock->previous_tab_index = parent_tabs->get_tab_idx_from_control(p_dock);
 
 				// Swap to previous tab when closing current tab.
-				if (parent_tabs->get_current_tab() == p_dock->previous_tab_index) {
+				if (parent_tabs->get_current_tab() == p_dock->previous_tab_index && parent_tabs->get_previous_tab() != -1) {
 					parent_tabs->set_current_tab(parent_tabs->get_previous_tab());
 				}
 			}
@@ -530,7 +544,7 @@ void EditorDockManager::load_docks_from_config(Ref<ConfigFile> p_layout, const S
 					_move_dock(dock, closed_dock_parent);
 				} else {
 					dock->is_open = true;
-					_move_dock(dock, dock_slots[i], 0);
+					_move_dock(dock, dock_slots[i], 0, false);
 				}
 			}
 			dock->load_layout_from_config(p_layout, section_name);
@@ -1019,6 +1033,7 @@ void DockSlotGrid::_notification(int p_what) {
 			unused_dock_color.a = 0.4;
 			Color unusable_dock_color = unused_dock_color;
 			unusable_dock_color.a = 0.1;
+			Color tab_unusable_color = unusable_dock_color;
 
 			TabContainer *context_tab_container = context_dock->get_parent_container();
 			int context_tab_index = -1;
@@ -1032,11 +1047,12 @@ void DockSlotGrid::_notification(int p_what) {
 
 				DockTabContainer *dock_slot = EditorDockManager::get_singleton()->dock_slots[i];
 				bool is_context_slot = context_tab_container == dock_slot;
+				bool is_slot_available = context_dock->available_layouts & dock_slot->layout;
 				int tabs_to_draw = MIN(max_tabs, dock_slot->get_tab_count());
 
 				if (i == context_dock->dock_slot_index) {
 					draw_rect(slot_rect, tab_selected_color);
-				} else if (!(context_dock->available_layouts & dock_slot->layout)) {
+				} else if (!is_slot_available) {
 					draw_rect(slot_rect, unusable_dock_color);
 				} else if (i == hovered_slot) {
 					draw_rect(slot_rect, hovered_dock_color);
@@ -1046,18 +1062,20 @@ void DockSlotGrid::_notification(int p_what) {
 					draw_rect(slot_rect, used_dock_color);
 				}
 
-				real_t tab_width = ((slot_rect.size.x - (max_tabs - 1) * TAB_MARGIN) / max_tabs) * EDSCALE;
-				real_t initial_offset = (slot_rect.size.x - (max_tabs * tab_width + (max_tabs - 1) * TAB_MARGIN)) * 0.5;
+				real_t tab_width = ((slot_rect.size.x - (max_tabs - 1) * TAB_MARGIN * EDSCALE) / max_tabs);
+				real_t initial_offset = (slot_rect.size.x - (max_tabs * tab_width + (max_tabs - 1) * TAB_MARGIN * EDSCALE)) * 0.5;
 
 				for (int j = 0; j < tabs_to_draw; j++) {
 					real_t pos_x = is_layout_rtl()
-							? slot_rect.size.x - (initial_offset + (j + 1) * tab_width + j * TAB_MARGIN)
-							: initial_offset + j * (tab_width + TAB_MARGIN);
-					const Rect2 tab_rect = Rect2(slot_rect.position + Vector2(pos_x, -MARGINS.y + MARGINS.y / 4), Vector2(tab_width, MARGINS.y / 2));
+							? slot_rect.size.x - (initial_offset + (j + 1) * tab_width + j * TAB_MARGIN * EDSCALE)
+							: initial_offset + j * (tab_width + TAB_MARGIN * EDSCALE);
+					const Rect2 tab_rect = Rect2(slot_rect.position + Vector2(pos_x, -MARGINS.y * EDSCALE + MARGINS.y * EDSCALE / 4), Vector2(tab_width, MARGINS.y * EDSCALE / 2));
 					if (is_context_slot && context_tab_index == j) {
 						draw_rect(tab_rect, tab_selected_color);
-					} else {
+					} else if (is_slot_available) {
 						draw_rect(tab_rect, tab_unselected_color);
+					} else {
+						draw_rect(tab_rect, tab_unusable_color);
 					}
 				}
 			}
@@ -1112,5 +1130,5 @@ void DockSlotGrid::gui_input(const Ref<InputEvent> &p_event) {
 }
 
 Size2 DockSlotGrid::get_minimum_size() const {
-	return GRID_SIZE * CELL_SIZE + (GRID_SIZE - Vector2i(1, 0)) * MARGINS;
+	return GRID_SIZE * CELL_SIZE * EDSCALE + (GRID_SIZE - Vector2i(1, 0)) * MARGINS * EDSCALE;
 }
