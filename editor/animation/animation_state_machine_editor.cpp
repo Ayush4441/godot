@@ -740,9 +740,6 @@ void AnimationNodeStateMachineEditor::_state_machine_gui_input(const Ref<InputEv
 				bool is_start_closer = dist_to_start < dist_to_end;
 
 				if ((near_start || near_end) && d < closest_d_highlight) {
-					StringName from_node = transition_lines[i].from_node;
-					StringName to_node = transition_lines[i].to_node;
-
 					bool is_start_endpoint = near_start && (is_start_closer || !near_end);
 					closest_d_highlight = d;
 					closest_for_highlight = i;
@@ -827,7 +824,7 @@ void AnimationNodeStateMachineEditor::_open_menu(const Vector2 &p_position) {
 	LocalVector<StringName> animation_names = tree->get_sorted_animation_list();
 	menu->add_submenu_node_item(TTR("Add Animation"), animations_menu);
 	if (animation_names.is_empty()) {
-		menu->set_item_disabled(menu->get_item_idx_from_text(TTR("Add Animation")), true);
+		menu->set_item_disabled(-1, true);
 	} else {
 		for (const StringName &name : animation_names) {
 			animations_menu->add_icon_item(theme_cache.animation_icon, name);
@@ -863,8 +860,6 @@ void AnimationNodeStateMachineEditor::_open_menu(const Vector2 &p_position) {
 }
 
 bool AnimationNodeStateMachineEditor::_create_submenu(PopupMenu *p_menu, Ref<AnimationNodeStateMachine> p_nodesm, const StringName &p_name, const StringName &p_path) {
-	String prev_path;
-
 	LocalVector<StringName> nodes = p_nodesm->get_node_list();
 
 	PopupMenu *nodes_menu = memnew(PopupMenu);
@@ -1665,8 +1660,6 @@ void AnimationNodeStateMachineEditor::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_THEME_CHANGED: {
 			panel->add_theme_style_override(SceneStringName(panel), theme_cache.panel_style);
-			error_panel->add_theme_style_override(SceneStringName(panel), theme_cache.error_panel_style);
-			error_label->add_theme_color_override(SNAME("default_color"), theme_cache.error_color);
 
 			tool_select->set_button_icon(theme_cache.tool_icon_select);
 			tool_create->set_button_icon(theme_cache.tool_icon_create);
@@ -1692,19 +1685,8 @@ void AnimationNodeStateMachineEditor::_notification(int p_what) {
 				return;
 			}
 
-			String error;
-
-			Ref<AnimationNodeStateMachinePlayback> playback = tree->get(AnimationTreeEditor::get_singleton()->get_base_path() + "playback");
-
-			if (error_time > 0) {
-				error_time -= get_process_delta_time();
-			}
-
-			if (playback.is_null()) {
-				error = vformat(TTR("No playback resource set at path: %s."), AnimationTreeEditor::get_singleton()->get_base_path() + "playback");
-			}
-
-			update_error_message(tree, error_panel, error_label, &error);
+			const String playback_path = AnimationTreeEditor::get_singleton()->get_base_path() + "playback";
+			Ref<AnimationNodeStateMachinePlayback> playback = tree->get(playback_path);
 
 			for (int i = 0; i < transition_lines.size(); i++) {
 				int tidx = -1;
@@ -2108,7 +2090,7 @@ AnimationNodeStateMachineEditor::AnimationNodeStateMachineEditor() {
 	top_hb->add_child(transition_tools_hb);
 	transition_tools_hb->add_child(memnew(VSeparator));
 
-	transition_tools_hb->add_child(memnew(Label(TTR("Transition:"))));
+	transition_tools_hb->add_child(memnew(Label(TTR("Transition"))));
 	switch_mode = memnew(OptionButton);
 	transition_tools_hb->add_child(switch_mode);
 
@@ -2119,11 +2101,9 @@ AnimationNodeStateMachineEditor::AnimationNodeStateMachineEditor() {
 	auto_advance->set_pressed(true);
 	transition_tools_hb->add_child(auto_advance);
 
-	//
-
 	top_hb->add_spacer();
 
-	top_hb->add_child(memnew(Label(TTR("Play Mode:"))));
+	top_hb->add_child(memnew(Label(TTR("Play Mode"))));
 	play_mode = memnew(OptionButton);
 	top_hb->add_child(play_mode);
 
@@ -2156,12 +2136,6 @@ AnimationNodeStateMachineEditor::AnimationNodeStateMachineEditor() {
 	h_scroll->set_anchors_and_offsets_preset(PRESET_BOTTOM_WIDE);
 	h_scroll->set_offset(SIDE_RIGHT, -v_scroll->get_size().x * EDSCALE);
 	h_scroll->connect(SceneStringName(value_changed), callable_mp(this, &AnimationNodeStateMachineEditor::_scroll_changed));
-
-	error_panel = memnew(PanelContainer);
-	add_child(error_panel);
-	error_label = create_error_label_node();
-	error_panel->add_child(error_label);
-	error_panel->hide();
 
 	set_custom_minimum_size(Size2(0, 300 * EDSCALE));
 

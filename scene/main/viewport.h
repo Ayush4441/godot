@@ -185,6 +185,8 @@ public:
 		DEBUG_DRAW_OCCLUDERS,
 		DEBUG_DRAW_MOTION_VECTORS,
 		DEBUG_DRAW_INTERNAL_BUFFER,
+		DEBUG_DRAW_CLUSTER_AREA_LIGHTS,
+		DEBUG_DRAW_AREA_LIGHT_ATLAS,
 	};
 
 	enum DefaultCanvasItemTextureFilter {
@@ -628,9 +630,9 @@ public:
 
 	void _push_text_input(const String &p_text, bool p_emit_text_changed_signal = false);
 	void push_text_input(const String &p_text);
-	void push_input(RequiredParam<InputEvent> rp_event, bool p_local_coords = false);
+	void push_input(RequiredParam<InputEvent> p_event, bool p_local_coords = false);
 #ifndef DISABLE_DEPRECATED
-	void push_unhandled_input(RequiredParam<InputEvent> rp_event, bool p_local_coords = false);
+	void push_unhandled_input(RequiredParam<InputEvent> p_event, bool p_local_coords = false);
 #endif // DISABLE_DEPRECATED
 	void notify_mouse_entered();
 	void notify_mouse_exited();

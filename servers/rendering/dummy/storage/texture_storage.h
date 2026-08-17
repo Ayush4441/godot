@@ -42,7 +42,7 @@ private:
 	struct DummyTexture {
 		Ref<Image> image;
 	};
-	mutable RID_PtrOwner<DummyTexture> texture_owner;
+	mutable RID_PtrOwner<DummyTexture, true> texture_owner;
 
 public:
 	static TextureStorage *get_singleton() { return singleton; }
@@ -137,6 +137,10 @@ public:
 	virtual void texture_rd_initialize(RID p_texture, const RID &p_rd_texture, const RSE::TextureLayeredType p_layer_type = RSE::TEXTURE_LAYERED_2D_ARRAY) override {}
 	virtual RID texture_get_rd_texture(RID p_texture, bool p_srgb = false) const override { return RID(); }
 	virtual uint64_t texture_get_native_handle(RID p_texture, bool p_srgb = false) const override { return 0; }
+
+	/* AREA LIGHT ATLAS API */
+	virtual void texture_add_to_area_light_atlas(RID p_texture) override {}
+	virtual void texture_remove_from_area_light_atlas(RID p_texture) override {}
 
 	/* DECAL API */
 	virtual RID decal_allocate() override { return RID(); }

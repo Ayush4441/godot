@@ -95,7 +95,7 @@ protected:
 	void _canvas_item_add_circle_bind_compat_84523(RID p_item, const Point2 &p_pos, float p_radius, const Color &p_color);
 	void _instance_set_interpolated_bind_compat_104269(RID p_instance, bool p_interpolated);
 	void _instance_reset_physics_interpolation_bind_compat_104269(RID p_instance);
-	void _viewport_set_size_compat_115799(RID p_viewport, int p_width, int p_height);
+	void _viewport_set_size_bind_compat_115799(RID p_viewport, int p_width, int p_height);
 	void _particles_request_process_time_bind_compat_109142(RID p_particles, real_t p_request_process_time);
 
 	static void _bind_compatibility_methods();
@@ -241,6 +241,11 @@ public:
 	virtual void mesh_surface_remove(RID p_mesh, int p_surface) = 0;
 	virtual void mesh_clear(RID p_mesh) = 0;
 
+	virtual RID mesh_surface_get_vertex_buffer_rd_rid(RID p_mesh, int p_surface) const = 0;
+	virtual RID mesh_surface_get_attribute_buffer_rd_rid(RID p_mesh, int p_surface) const = 0;
+	virtual RID mesh_surface_get_skin_buffer_rd_rid(RID p_mesh, int p_surface) const = 0;
+	virtual RID mesh_surface_get_index_buffer_rd_rid(RID p_mesh, int p_surface) const = 0;
+
 	virtual void mesh_debug_usage(List<RenderingServerTypes::MeshInfo> *r_info) = 0;
 
 	/* MULTIMESH API */
@@ -303,6 +308,7 @@ public:
 	virtual RID directional_light_create() = 0;
 	virtual RID omni_light_create() = 0;
 	virtual RID spot_light_create() = 0;
+	virtual RID area_light_create() = 0;
 
 	virtual void light_set_color(RID p_light, const Color &p_color) = 0;
 	virtual void light_set_param(RID p_light, RSE::LightParam p_param, float p_value) = 0;
@@ -326,6 +332,10 @@ public:
 	virtual void light_directional_set_shadow_mode(RID p_light, RSE::LightDirectionalShadowMode p_mode) = 0;
 	virtual void light_directional_set_blend_splits(RID p_light, bool p_enable) = 0;
 	virtual void light_directional_set_sky_mode(RID p_light, RSE::LightDirectionalSkyMode p_mode) = 0;
+
+	virtual void light_area_set_size(RID p_light, const Vector2 &p_size) = 0;
+	virtual void light_area_set_normalize_energy(RID p_light, bool p_enabled) = 0;
+	virtual void light_area_set_texture(RID p_light, RID texture) = 0;
 
 	// Shadow atlas
 
@@ -767,6 +777,7 @@ public:
 	/* BAKE API */
 
 	virtual TypedArray<Image> bake_render_uv2(RID p_base, const TypedArray<RID> &p_material_overrides, const Size2i &p_image_size) = 0;
+	virtual PackedByteArray bake_render_area_light_atlas(const TypedArray<RID> &p_area_light_textures, const TypedArray<Rect2> &p_area_light_atlas_texture_rects, const Size2i &p_size, int p_mipmaps) = 0;
 
 	/* CANVAS API (2D) */
 

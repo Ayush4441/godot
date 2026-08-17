@@ -158,7 +158,8 @@ public:
 
 	template <typename T>
 	static Object *creator(bool p_notify_postinitialize) {
-		Object *ret = new ("") T;
+		// Cannot use memnew here because memnew calls _postinitialize automatically.
+		Object *ret = new (DefaultAllocator{}) T;
 		ret->_initialize();
 		if (p_notify_postinitialize) {
 			ret->_postinitialize();
@@ -199,9 +200,9 @@ public:
 #endif
 
 #ifdef DEBUG_ENABLED
-	static MethodBind *bind_methodfi(uint32_t p_flags, MethodBind *p_bind, bool p_compatibility, const MethodDefinition &method_name, const Variant **p_defs, int p_defcount);
+	static MethodBind *bind_methodfi(uint32_t p_flags, MethodBind *p_bind, bool p_compatibility, const MethodDefinition &p_method_name, const Variant **p_defs, int p_defcount);
 #else
-	static MethodBind *bind_methodfi(uint32_t p_flags, MethodBind *p_bind, bool p_compatibility, const char *method_name, const Variant **p_defs, int p_defcount);
+	static MethodBind *bind_methodfi(uint32_t p_flags, MethodBind *p_bind, bool p_compatibility, const char *p_method_name, const Variant **p_defs, int p_defcount);
 #endif // DEBUG_ENABLED
 
 	static APIType current_api;
@@ -230,11 +231,12 @@ private:
 	// Non-locking variants of get_parent_class and is_parent_class.
 	static StringName _get_parent_class(const StringName &p_class);
 	static bool _is_parent_class(const StringName &p_class, const StringName &p_inherits);
-	static void _bind_compatibility(ClassInfo *type, MethodBind *p_method);
+	static void _bind_compatibility(ClassInfo *r_type, MethodBind *p_method);
 	static MethodBind *_bind_vararg_method(MethodBind *p_bind, const StringName &p_name, const Vector<Variant> &p_default_args, bool p_compatibility);
 	static void _bind_method_custom(const StringName &p_class, MethodBind *p_method, bool p_compatibility);
 
-	static Object *_instantiate_internal(const StringName &p_class, bool p_require_real_class = false, bool p_notify_postinitialize = true, bool p_exposed_only = true);
+	static Object *_instantiate_from_gdextension(ObjectGDExtension *p_object_gd_extension, bool p_notify_postinitialize, bool p_with_refcount);
+	static Object *_instantiate_internal(const StringName &p_class, bool p_require_real_class = false, bool p_notify_postinitialize = true, bool p_exposed_only = true, bool p_with_refcount = false);
 
 	static bool _can_instantiate(ClassInfo *p_class_info, bool p_exposed_only = true);
 
@@ -343,6 +345,7 @@ public:
 	static Object *instantiate(const StringName &p_class);
 	static Object *instantiate_no_placeholders(const StringName &p_class);
 	static Object *instantiate_without_postinitialization(const StringName &p_class);
+	static Object *instantiate_without_postinitialization_with_refcount(const StringName &p_class);
 	static void set_object_extension_instance(Object *p_object, const StringName &p_class, GDExtensionClassInstancePtr p_instance);
 
 	static APIType get_api_type(const StringName &p_class);
@@ -543,13 +546,19 @@ public:
 };
 
 #define BIND_ENUM_CONSTANT(m_constant) \
-	get_gdtype_static_mutable().bind_integer_constant(__constant_get_enum_name(m_constant), __constant_get_enum_value_name(#m_constant), m_constant);
+	get_gdtype_static_mutable().bind_integer_constant(__constant_get_enum_name(m_constant), __constant_get_enum_value_name(#m_constant), static_cast<int64_t>(m_constant));
+#define BIND_ENUM_CONSTANT_EXT(m_constant, m_bound_name) \
+	get_gdtype_static_mutable().bind_integer_constant(__constant_get_enum_name(m_constant), #m_bound_name, static_cast<int64_t>(m_constant));
 
 #define BIND_BITFIELD_FLAG(m_constant) \
-	get_gdtype_static_mutable().bind_integer_constant(__constant_get_bitfield_name(m_constant), __constant_get_enum_value_name(#m_constant), m_constant, true);
+	get_gdtype_static_mutable().bind_integer_constant(__constant_get_bitfield_name(m_constant), __constant_get_enum_value_name(#m_constant), static_cast<int64_t>(m_constant), true);
+#define BIND_BITFIELD_FLAG_EXT(m_constant, m_bound_name) \
+	get_gdtype_static_mutable().bind_integer_constant(__constant_get_bitfield_name(m_constant), #m_bound_name, static_cast<int64_t>(m_constant), true);
 
 #define BIND_CONSTANT(m_constant) \
-	get_gdtype_static_mutable().bind_integer_constant(StringName(), __constant_get_enum_value_name(#m_constant), m_constant);
+	get_gdtype_static_mutable().bind_integer_constant(StringName(), __constant_get_enum_value_name(#m_constant), static_cast<int64_t>(m_constant));
+#define BIND_CONSTANT_EXT(m_constant, m_bound_name) \
+	get_gdtype_static_mutable().bind_integer_constant(StringName(), #m_bound_name, static_cast<int64_t>(m_constant));
 
 #ifdef DEBUG_ENABLED
 

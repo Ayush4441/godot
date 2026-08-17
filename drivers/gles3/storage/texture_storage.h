@@ -396,12 +396,12 @@ struct RenderTarget {
 		RID velocity_depth;
 
 		struct FBOCacheEntry {
-			GLuint fbo;
-			GLuint color;
-			GLuint depth;
+			GLuint fbo = 0;
+			GLuint color = 0;
+			GLuint depth = 0;
 			Size2i size;
 			Vector<GLuint> allocated_textures;
-			bool depth_has_stencil;
+			bool depth_has_stencil = false;
 		};
 		RBMap<uint32_t, FBOCacheEntry> fbo_cache;
 
@@ -629,6 +629,10 @@ public:
 	void texture_remove_from_texture_atlas(RID p_texture);
 	void texture_atlas_mark_dirty_on_texture(RID p_texture);
 	void texture_atlas_remove_texture(RID p_texture);
+
+	/* AREA LIGHT ATLAS API */
+	virtual void texture_add_to_area_light_atlas(RID p_texture) override {}
+	virtual void texture_remove_from_area_light_atlas(RID p_texture) override {}
 
 	/* DECAL API */
 

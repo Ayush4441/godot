@@ -100,7 +100,7 @@ Ref<Image> EditorExportPlatform::_load_icon_or_splash_image(const String &p_path
 	Ref<Image> image;
 
 	if (!p_path.is_empty() && ResourceLoader::exists(p_path) && !ResourceLoader::get_resource_type(p_path).is_empty()) {
-		Ref<Texture2D> texture = ResourceLoader::load(p_path, "", ResourceFormatLoader::CACHE_MODE_REUSE, r_error);
+		Ref<Texture2D> texture = ResourceLoader::load(p_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE, r_error);
 		if (texture.is_valid()) {
 			image = texture->get_image();
 			if (image.is_valid() && image->is_compressed()) {
@@ -447,10 +447,7 @@ Error EditorExportPlatform::_save_pack_file(const Ref<EditorExportPreset> &p_pre
 	sd.ofs = (pd->use_sparse_pck) ? 0 : pd->f->get_position();
 	sd.size = p_data.size();
 	sd.delta = p_delta;
-	Error err = _encrypt_and_store_data(ftmp, simplified_path, p_data, p_enc_in_filters, p_enc_ex_filters, p_key, p_seed, sd.encrypted);
-	if (err != OK) {
-		return err;
-	}
+	RETURN_IF_ERROR(_encrypt_and_store_data(ftmp, simplified_path, p_data, p_enc_in_filters, p_enc_ex_filters, p_key, p_seed, sd.encrypted));
 	if (!pd->use_sparse_pck) {
 		ERR_FAIL_COND_V(pd->f->get_position() - sd.ofs < (uint64_t)p_data.size(), ERR_FILE_CANT_WRITE);
 	}
@@ -520,10 +517,7 @@ Error EditorExportPlatform::_save_pack_patch_file(const Ref<EditorExportPreset> 
 	Vector<uint8_t> patch_data = p_data;
 
 	if (delta) {
-		Error err = DeltaEncoding::encode_delta(old_data, p_data, patch_data, p_preset->get_patch_delta_zstd_level());
-		if (err != OK) {
-			return err;
-		}
+		RETURN_IF_ERROR(DeltaEncoding::encode_delta(old_data, p_data, patch_data, p_preset->get_patch_delta_zstd_level()));
 
 		int64_t reduction_bytes = MAX(0, p_data.size() - patch_data.size());
 		double reduction_ratio = reduction_bytes / (double)p_data.size();
@@ -795,7 +789,11 @@ HashSet<String> EditorExportPlatform::get_features(const Ref<EditorExportPreset>
 	return result;
 }
 
-EditorExportPlatform::ExportNotifier::ExportNotifier(EditorExportPlatform &p_platform, const Ref<EditorExportPreset> &p_preset, bool p_debug, const String &p_path, BitField<EditorExportPlatform::DebugFlags> p_flags) {
+EditorExportPlatform::ExportNotifier::ExportNotifier(EditorExportPlatform &p_platform, const Ref<EditorExportPreset> &p_preset, bool p_debug, const String &p_path, BitField<EditorExportPlatform::DebugFlags> p_flags, bool p_enabled) {
+	enabled = p_enabled;
+	if (!enabled) {
+		return;
+	}
 	HashSet<String> features = p_platform.get_features(p_preset, p_debug);
 	Vector<Ref<EditorExportPlugin>> export_plugins = EditorExport::get_singleton()->get_export_plugins();
 	//initial export plugin callback
@@ -814,6 +812,9 @@ EditorExportPlatform::ExportNotifier::ExportNotifier(EditorExportPlatform &p_pla
 }
 
 EditorExportPlatform::ExportNotifier::~ExportNotifier() {
+	if (!enabled) {
+		return;
+	}
 	Vector<Ref<EditorExportPlugin>> export_plugins = EditorExport::get_singleton()->get_export_plugins();
 	for (int i = 0; i < export_plugins.size(); i++) {
 		if (GDVIRTUAL_IS_OVERRIDDEN_PTR(export_plugins[i], _export_end)) {
@@ -1699,14 +1700,19 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 		} else {
 			// Just store it as it comes.
 
-			// Customization only happens if plugins did not take care of it before.
-			bool force_binary = convert_text_to_binary && (path.has_extension("tres") || path.has_extension("tscn"));
-			String export_path = _export_customize(path, customize_resources_plugins, customize_scenes_plugins, export_cache, export_base_path, force_binary);
+			String export_path;
+			if (type.is_empty()) {
+				export_path = path;
+			} else {
+				// Customization only happens if plugins did not take care of it before.
+				bool force_binary = convert_text_to_binary && (path.has_extension("tres") || path.has_extension("tscn"));
+				export_path = _export_customize(path, customize_resources_plugins, customize_scenes_plugins, export_cache, export_base_path, force_binary);
 
-			if (export_path != path) {
-				// Add a remap entry.
-				path_remaps.push_back(path);
-				path_remaps.push_back(export_path);
+				if (export_path != path) {
+					// Add a remap entry.
+					path_remaps.push_back(path);
+					path_remaps.push_back(export_path);
+				}
 			}
 
 			Vector<uint8_t> array = FileAccess::get_file_as_bytes(export_path);
@@ -1906,10 +1912,8 @@ EditorExportPlatform::FilteredCache EditorExportPlatform::_get_filtered_cache(co
 	}
 
 	// Encode global classes.
-	if (!global_class_list.is_empty()) {
-		global_class_cf->set_value("", "list", global_class_list);
-		result.global_class_list = global_class_cf->encode_to_text().to_utf8_buffer();
-	}
+	global_class_cf->set_value("", "list", global_class_list);
+	result.global_class_list = global_class_cf->encode_to_text().to_utf8_buffer();
 
 	// Encode UIDs.
 	result.uids = ResourceUID::encode_binary_cache(uid_entries);
@@ -2312,7 +2316,7 @@ Error EditorExportPlatform::save_pack(const Ref<EditorExportPreset> &p_preset, b
 		}
 
 		// Ensure embedded PCK starts at a 64-bit multiple
-		int pad = f->get_position() % 8;
+		int pad = _get_pad(8, f->get_position());
 		for (int i = 0; i < pad; i++) {
 			f->store_8(0);
 		}
@@ -2380,7 +2384,7 @@ Error EditorExportPlatform::save_pack(const Ref<EditorExportPreset> &p_preset, b
 	if (p_embed) {
 		// Ensure embedded data ends at a 64-bit multiple.
 		uint64_t embed_end = f->get_position() - embed_pos + 12;
-		uint64_t pad = embed_end % 8;
+		uint64_t pad = _get_pad(8, embed_end);
 		for (uint64_t i = 0; i < pad; i++) {
 			f->store_8(0);
 		}
@@ -2463,22 +2467,16 @@ Error EditorExportPlatform::export_zip(const Ref<EditorExportPreset> &p_preset, 
 
 Error EditorExportPlatform::export_pack_patch(const Ref<EditorExportPreset> &p_preset, bool p_debug, const String &p_path, const Vector<String> &p_patches, BitField<EditorExportPlatform::DebugFlags> p_flags) {
 	ExportNotifier notifier(*this, p_preset, p_debug, p_path, p_flags);
-	Error err = _load_patches(p_preset, p_patches.is_empty() ? p_preset->get_patches() : p_patches);
-	if (err != OK) {
-		return err;
-	}
-	err = save_pack_patch(p_preset, p_debug, p_path);
+	RETURN_IF_ERROR(_load_patches(p_preset, p_patches.is_empty() ? p_preset->get_patches() : p_patches));
+	Error err = save_pack_patch(p_preset, p_debug, p_path);
 	_unload_patches();
 	return err;
 }
 
 Error EditorExportPlatform::export_zip_patch(const Ref<EditorExportPreset> &p_preset, bool p_debug, const String &p_path, const Vector<String> &p_patches, BitField<EditorExportPlatform::DebugFlags> p_flags) {
 	ExportNotifier notifier(*this, p_preset, p_debug, p_path, p_flags);
-	Error err = _load_patches(p_preset, p_patches.is_empty() ? p_preset->get_patches() : p_patches);
-	if (err != OK) {
-		return err;
-	}
-	err = save_zip_patch(p_preset, p_debug, p_path);
+	RETURN_IF_ERROR(_load_patches(p_preset, p_patches.is_empty() ? p_preset->get_patches() : p_patches));
+	Error err = save_zip_patch(p_preset, p_debug, p_path);
 	_unload_patches();
 	return err;
 }
@@ -2702,10 +2700,8 @@ Error EditorExportPlatform::ssh_push_to_remote(const String &p_host, const Strin
 		OS::get_singleton()->print("\n");
 	}
 
-	Error err = OS::get_singleton()->execute(scp_path, args, &out, &exit_code, true);
-	if (err != OK) {
-		return err;
-	} else if (exit_code != 0) {
+	RETURN_IF_ERROR(OS::get_singleton()->execute(scp_path, args, &out, &exit_code, true));
+	if (exit_code != 0) {
 		if (!out.is_empty()) {
 			print_line(out);
 		}
@@ -2760,7 +2756,7 @@ void EditorExportPlatform::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("export_project_files", "preset", "debug", "save_cb", "shared_cb"), &EditorExportPlatform::_export_project_files, DEFVAL(Callable()));
 
-	ClassDB::bind_method(D_METHOD("export_project", "preset", "debug", "path", "flags"), &EditorExportPlatform::export_project, DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("export_project", "preset", "debug", "path", "flags", "notify"), &EditorExportPlatform::export_project, DEFVAL(0), DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("export_pack", "preset", "debug", "path", "flags"), &EditorExportPlatform::export_pack, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("export_zip", "preset", "debug", "path", "flags"), &EditorExportPlatform::export_zip, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("export_pack_patch", "preset", "debug", "path", "patches", "flags"), &EditorExportPlatform::export_pack_patch, DEFVAL(PackedStringArray()), DEFVAL(0));
